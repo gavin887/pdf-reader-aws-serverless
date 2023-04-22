@@ -1,45 +1,65 @@
-service: lambda-pdf2csv
+service: aws-serverless-pdf2csv
 frameworkVersion: '3'
+
+plugins:
+  - serverless-webpack
 
 custom:
   tableName: 'attachments-${opt:stage, sls:stage, self:provider.stage}'
+  mysql:
+    hostname: 'aurora-mysql-instance1.cuakwssazypa.us-east-1.rds.amazonaws.com'
+    username: 'admin'
+    password: 'pdf2csvOnRds'
+    database: 'pdf2csv'
+  webpack:
+    webpackConfig: 'webpack.config.js'
+    includeModules: true
+    packager: 'npm'
 
 provider:
   name: aws
   runtime: nodejs18.x
+  timeout: 20
+  apiGateway:
+    shouldStartNameWithService: true
   stage: dev
+  region: us-east-1
   environment:
     ATTACHMENTS_TABLE: ${self:custom.tableName}
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action:
-            - dynamodb:Query
-            - dynamodb:Scan
-            - dynamodb:GetItem
-            - dynamodb:PutItem
-            - dynamodb:UpdateItem
-            - dynamodb:DeleteItem
-          Resource:
-            - Fn::GetAtt: [ AttachmentsTable, Arn ]
+    DB_HOST: ${self:custom.mysql.hostname}
+    DB_USER: ${self:custom.mysql.username}
+    DB_PASS: ${self:custom.mysql.password}
+    DB_NAME: ${self:custom.mysql.database}
 
 functions:
-  api:
-    handler: index.handler
+  app:
+    handler: lambda.handler
     events:
-      - httpApi: '*'
+      - httpApi: GET /new_issue
+      - httpApi: POST /new_issue
+      - httpApi: GET /issues
+      - httpApi: GET /cases
 
 resources:
   Resources:
-    AttachmentsTable:
-      Type: AWS::DynamoDB::Table
+    RDSCluster:
+      Type: 'AWS::RDS::DBCluster'
       Properties:
-        AttributeDefinitions:
-          - AttributeName: id
-            AttributeType: S
-        KeySchema:
-          - AttributeName: id
-            KeyType: HASH
-        BillingMode: PAY_PER_REQUEST
-        TableName: ${self:custom.tableName}
+        Engine: aurora-mysql
+        DBClusterIdentifier: aurora-mysql-cluster
+        EngineVersion: '8.0.mysql_aurora.3.02.2'
+        MasterUsername: 'admin'
+        MasterUserPassword: 'pdf2csvOnRds'
+        DatabaseName: 'pdf2csv'
+        ServerlessV2ScalingConfiguration:
+          MinCapacity: 1
+          MaxCapacity: 2
+    RDSClusterInstance1:
+      Type: 'AWS::RDS::DBInstance'
+      Properties:
+        DBInstanceIdentifier: aurora-mysql-instance1
+        Engine: aurora-mysql
+        DBInstanceClass: 'db.serverless'
+        DBClusterIdentifier: !Ref RDSCluster
+        PubliclyAccessible: 'true'
+        DeleteAutomatedBackups: 'false'
